@@ -1,0 +1,541 @@
+<title>Робо-рука SocialTech</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: мастерская — 3D-сцена во весь экран, пульт управления справа (на телефоне — снизу). */
+:root {
+  --bg: #e9ecf0;
+  --bg-deep: #d5dae1;
+  --panel: rgba(255, 255, 255, 0.82);
+  --line: rgba(30, 38, 52, 0.14);
+  --fg: #141922;
+  --muted: #5a6474;
+  --red: #b5121b;
+  --gold: #b9862a;
+  --arc: #0f8fb8;
+  --track: #c8ced8;
+  --grid: #9aa4b2;
+  --font-display: "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1015; --bg-deep: #05070a; --panel: rgba(20, 24, 31, 0.84); --line: rgba(160, 180, 210, 0.14);
+    --fg: #e8ecf2; --muted: #8f9aab; --red: #e0353d; --gold: #e2b04f; --arc: #5fd4ff; --track: #2a313c; --grid: #3a4350;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1015; --bg-deep: #05070a; --panel: rgba(20, 24, 31, 0.84); --line: rgba(160, 180, 210, 0.14);
+  --fg: #e8ecf2; --muted: #8f9aab; --red: #e0353d; --gold: #e2b04f; --arc: #5fd4ff; --track: #2a313c; --grid: #3a4350;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: radial-gradient(120% 90% at 30% 20%, var(--bg) 0%, var(--bg-deep) 100%);
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+.app { position: relative; height: 100%; display: grid; grid-template-columns: 1fr 340px; }
+.stage { position: relative; min-width: 0; min-height: 0; }
+canvas#scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.title {
+  position: absolute; top: 14px; left: max(16px, env(safe-area-inset-left, 0px)); right: 16px;
+  pointer-events: none; display: grid; gap: 6px;
+}
+.title h1 {
+  margin: 0; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.02em;
+  font-size: clamp(22px, 3.2vw, 34px); line-height: 1.05; text-wrap: balance;
+}
+.title h1 span { color: var(--red); }
+.specs { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 8px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chip b { color: var(--fg); font-weight: 600; }
+
+.info {
+  position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 16px; max-width: min(360px, calc(100% - 32px));
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px;
+  padding: 10px 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 13px;
+}
+.info .k { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.info .n { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 2px 0 4px; }
+.info .d { color: var(--muted); line-height: 1.45; }
+.hint { position: absolute; right: 16px; bottom: 16px; font-size: 12px; color: var(--muted); pointer-events: none; }
+
+.loading[hidden] { display: none; }
+.loading {
+  position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-mono);
+  font-size: 13px; color: var(--muted);
+}
+
+aside.panel {
+  position: relative; z-index: 2; border-left: 1px solid var(--line); background: var(--panel);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  overflow-y: auto; padding-block: 18px 24px;
+  padding-left: 18px; padding-right: max(18px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 22px;
+}
+.sec h2 {
+  margin: 0 0 10px; font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted);
+}
+.joint { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; padding: 6px 0; }
+.joint label { font-size: 14px; font-weight: 500; }
+.joint output { font-family: var(--font-mono); font-size: 13px; color: var(--fg); font-variant-numeric: tabular-nums; min-width: 4.5ch; text-align: right; }
+.joint .pad { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); letter-spacing: 0.03em; }
+
+input[type="range"] { grid-column: 1 / -1; width: 100%; appearance: none; -webkit-appearance: none; background: transparent; height: 26px; margin: 0; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
+  background: var(--red); border: 3px solid var(--gold); box-shadow: 0 0 0 4px transparent; transition: box-shadow .15s;
+}
+input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--red); border: 3px solid var(--gold); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--arc); }
+input[type="range"]:focus-visible { outline: none; }
+
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: 600 13px var(--font-body); color: var(--fg); background: transparent; border: 1px solid var(--line);
+  border-radius: 6px; padding: 9px 12px; cursor: pointer; transition: border-color .15s, background .15s;
+}
+button:hover { border-color: var(--gold); }
+button:focus-visible { outline: 2px solid var(--arc); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+
+.pad-map { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; }
+.pad-map kbd {
+  font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px;
+  color: var(--arc); white-space: nowrap; align-self: start;
+}
+.pad-map span { color: var(--muted); }
+.note { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 58% 42%; }
+  aside.panel { border-left: 0; border-top: 1px solid var(--line); padding-block: 14px 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); gap: 18px; }
+  .hint { display: none; }
+  .info { bottom: 10px; }
+  .info.idle .d { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="stage">
+    <canvas id="scene" aria-label="3D-модель робо-руки"></canvas>
+    <div class="loading" id="loading">Загружаю модель…</div>
+    <div class="title">
+      <h1>Робо-рука <span>SocialTech</span></h1>
+      <div class="specs">
+        <span class="chip"><b>6</b> осей</span>
+        <span class="chip">высота <b>~56 см</b></span>
+        <span class="chip">груз <b>до 1 кг</b></span>
+        <span class="chip"><b>27</b> деталей · PETG <b>~920 г</b></span>
+        <span class="chip">геймпад <b>PS5</b></span>
+      </div>
+    </div>
+    <div class="info idle" id="info">
+      <div class="k" id="info-k">Нажми на любую деталь</div>
+      <div class="n" id="info-n">Модель для Bambu Lab P1S</div>
+      <div class="d" id="info-d">Крути сцену пальцем, двигай суставы ползунками. Красные и золотые детали — декор в стиле Iron Man.</div>
+    </div>
+    <div class="hint">тяни — вращать · колесо — зум</div>
+  </div>
+
+  <aside class="panel">
+    <section class="sec">
+      <h2>Суставы</h2>
+      <div id="joints"></div>
+    </section>
+    <section class="sec">
+      <h2>Режим</h2>
+      <div class="btns">
+        <button id="demo" aria-pressed="false" type="button">▶ Демо: взять банку</button>
+        <button id="reset" type="button">Сброс</button>
+        <button id="printOnly" aria-pressed="false" type="button">Только печать</button>
+      </div>
+    </section>
+    <section class="sec">
+      <h2>Геймпад PS5</h2>
+      <div class="pad-map">
+        <kbd>L-стик ←→</kbd><span>поворот основания</span>
+        <kbd>L-стик ↑↓</kbd><span>плечо</span>
+        <kbd>R-стик ↑↓</kbd><span>локоть</span>
+        <kbd>R-стик ←→</kbd><span>наклон запястья</span>
+        <kbd>L1 / R1</kbd><span>вращение кисти</span>
+        <kbd>L2 / R2</kbd><span>разжать / сжать (по силе нажатия)</span>
+        <kbd>✕</kbd><span>запомнить позу</span>
+        <kbd>△</kbd><span>повторить движения</span>
+        <kbd>PS</kbd><span>стоп</span>
+      </div>
+    </section>
+    <section class="sec">
+      <p class="note">Тёмные детали — PETG, красная броня и золотые крышки — PLA Silk, накладки пальцев — TPU. Серые моторы, болты и шпильки покупаются. Размеры сервоприводов в модели примерные: перед печатью сверь со своими.</p>
+    </section>
+  </aside>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+
+const NAMES = {
+  "01_base_housing": ["Корпус основания", "Внутри шаговый мотор на салазках (натяжение ремня), шкив и электроника. Сверху дорожка для шариков 6 мм."],
+  "02_led_ring": ["Кольцо подсветки", "Прозрачный PETG, под ним светодиодная лента."],
+  "03_turntable_shoulder": ["Платформа со стойками плеча", "Крутится на 360° на шариках. Сзади стойка пружины-противовеса."],
+  "04_pulley_100T": ["Шкив GT2 100 зубьев", "Понижение 1:5 от шагового мотора."],
+  "05_cradle_shoulder_big": ["Держатель серво плеча (большой)", "Под DS5160 / DS51150. Можно заменить на стандартный."],
+  "06_upper_arm": ["Плечо", "Внутри 2 шпильки М8 для жёсткости. Сзади крюк пружины."],
+  "07_cradle_elbow": ["Держатель серво локтя", "Под стандартный сервопривод 40×20 мм."],
+  "08_forearm": ["Предплечье", "Внутри 2 шпильки М8. На конце вилка запястья."],
+  "09_cradle_wrist": ["Держатель серво запястья", "Под стандартный сервопривод 40×20 мм."],
+  "10_wrist_block": ["Блок запястья", "Наклон и вращение кисти."],
+  "11_gripper_body": ["Корпус захвата", "Сервопривод крутит червяк, червяк — шестерни пальцев."],
+  "12_worm": ["Червяк", "Самоторможение: захват не разжимается сам."],
+  "13_gear_left_worm": ["Шестерня с червячным венцом", "Левый поводок пальца."],
+  "14_gear_right": ["Шестерня правая", "Правый поводок пальца."],
+  "15a_link_left": ["Тяга левая", "Держит палец параллельно."],
+  "15b_link_right": ["Тяга правая", "Держит палец параллельно."],
+  "16a_finger_left": ["Палец левый", ""],
+  "16b_finger_right": ["Палец правый", ""],
+  "17a_pad_left": ["Накладка пальца", "TPU, чтобы банка не выскальзывала."],
+  "17b_pad_right": ["Накладка пальца", "TPU, чтобы банка не выскальзывала."],
+  "20a_armor_upper_front": ["Броня плеча, перед", "PLA Silk красный. Клеится."],
+  "20b_armor_upper_back": ["Броня плеча, зад", "PLA Silk красный. Клеится."],
+  "20c_armor_fore": ["Броня предплечья", "PLA Silk красный. Клеится."],
+  "21a_cap_shoulder": ["Крышка сустава плеча", "PLA Silk золотой."],
+  "21b_cap_elbow": ["Крышка сустава локтя", "PLA Silk золотой."],
+  "21c_cap_wrist": ["Крышка сустава запястья", "PLA Silk золотой."],
+  "22_diffuser_wrist": ["Рассеиватель подсветки", "Прозрачный PETG."],
+  "nema17": ["Шаговый мотор NEMA17", "Покупается."],
+  "gt2_20t": ["Шкив GT2 20 зубьев", "Покупается, ставится на вал мотора."],
+  "belt": ["Ремень GT2", "Покупается, кольцевой."],
+  "balls": ["Шарики 6 мм", "Страйкбольные, ~80 шт."],
+  "estop": ["Аварийная кнопка", "Грибок Ø22 мм, разрывает питание моторов."],
+  "servo_shoulder_DS5160": ["Сервопривод плеча DS5160", "60 кг·см. Покупается."],
+  "servo_elbow": ["Сервопривод локтя", "MG996R → потом DS3235."],
+  "servo_wrist_pitch": ["Сервопривод наклона запястья", "MG996R / DS3235."],
+  "servo_wrist_roll": ["Сервопривод вращения кисти", "MG996R / DS3218."],
+  "servo_gripper": ["Сервопривод захвата", "MG996R / DS3235."],
+  "bolt_shoulder": ["Ось плеча", "Болт М8."], "bolt_elbow": ["Ось локтя", "Болт М8."], "bolt_wrist": ["Ось запястья", "Болт М8."],
+  "rods_upper": ["Шпильки М8", "Вклеиваются внутрь плеча."], "rods_fore": ["Шпильки М8", "Вклеиваются внутрь предплечья."],
+  "pins_gripper": ["Оси захвата", "Винты М3."],
+};
+const MATS = {
+  dark:   { color: 0x30343c, metalness: 0.15, roughness: 0.55, clearcoat: 0.3 },
+  red:    { color: 0xa50d16, metalness: 0.55, roughness: 0.28, clearcoat: 1.0, clearcoatRoughness: 0.08 },
+  gold:   { color: 0xd4a23a, metalness: 0.95, roughness: 0.28 },
+  glow:   { color: 0x9fe8ff, emissive: 0x38c8ff, emissiveIntensity: 2.2, transmission: 0.3, roughness: 0.3 },
+  servo:  { color: 0x17181c, metalness: 0.1, roughness: 0.7 },
+  motor:  { color: 0x6b7078, metalness: 0.8, roughness: 0.38 },
+  metal:  { color: 0xb9bec6, metalness: 1.0, roughness: 0.3 },
+  rubber: { color: 0x101114, metalness: 0, roughness: 0.9 },
+  tpu:    { color: 0x1c1d20, metalness: 0, roughness: 0.95 },
+  estop:  { color: 0xd8231c, metalness: 0.1, roughness: 0.35, clearcoat: 0.8 },
+};
+
+const JOINTS = [
+  { id: "base",     name: "Поворот основания", min: -180, max: 180, val: 25, unit: "°", pad: "L-стик ←→" },
+  { id: "shoulder", name: "Плечо",            min: -70,  max: 80,  val: 15, unit: "°", pad: "L-стик ↑↓" },
+  { id: "elbow",    name: "Локоть",           min: -120, max: 125, val: 70, unit: "°", pad: "R-стик ↑↓" },
+  { id: "wrist",    name: "Наклон запястья",  min: -110, max: 110, val: 65, unit: "°", pad: "R-стик ←→" },
+  { id: "roll",     name: "Вращение кисти",   min: -180, max: 180, val: 0,  unit: "°", pad: "L1 / R1" },
+  { id: "grip",     name: "Захват",           min: 0,    max: 100, val: 55, unit: "%", pad: "L2 / R2 · 0% = сжат" },
+];
+const state = Object.fromEntries(JOINTS.map(j => [j.id, j.val]));
+
+// ---------- UI
+const jointsEl = document.getElementById("joints");
+const inputs = {};
+for (const j of JOINTS) {
+  const row = document.createElement("div");
+  row.className = "joint";
+  row.innerHTML = `<label for="j-${j.id}">${j.name}</label><output id="o-${j.id}"></output>
+    <input type="range" id="j-${j.id}" min="${j.min}" max="${j.max}" step="1" value="${j.val}">
+    <div class="pad">${j.pad}</div>`;
+  jointsEl.appendChild(row);
+  const inp = row.querySelector("input");
+  const out = row.querySelector("output");
+  inputs[j.id] = { inp, out, j };
+  inp.addEventListener("input", () => { stopDemo(); state[j.id] = +inp.value; syncUI(); });
+}
+function syncUI() {
+  for (const id in inputs) {
+    const { inp, out, j } = inputs[id];
+    inp.value = Math.round(state[id]);
+    out.textContent = Math.round(state[id]) + j.unit;
+  }
+}
+syncUI();
+
+// ---------- three
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(36, 1, 5, 6000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.minDistance = 250;
+controls.maxDistance = 2600;
+controls.maxPolarAngle = Math.PI * 0.495;
+
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(500, 1100, 600);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -500, right: 500, top: 500, bottom: -500, near: 100, far: 2600 });
+key.shadow.bias = -0.0004;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x9fd8ff, 1.2);
+rim.position.set(-700, 500, -600);
+scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 0.5));
+const reactor = new THREE.PointLight(0x38c8ff, 3000, 500, 2);
+reactor.position.set(0, 30, 0);
+scene.add(reactor);
+
+const shadowGround = new THREE.Mesh(new THREE.CircleGeometry(1400, 64), new THREE.ShadowMaterial({ opacity: 0.22 }));
+shadowGround.rotation.x = -Math.PI / 2;
+shadowGround.receiveShadow = true;
+scene.add(shadowGround);
+let grid;
+function makeGrid() {
+  const c = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim() || "#888";
+  if (grid) scene.remove(grid);
+  grid = new THREE.PolarGridHelper(900, 12, 9, 96, new THREE.Color(c), new THREE.Color(c));
+  grid.material.transparent = true;
+  grid.material.opacity = 0.35;
+  grid.position.y = 0.2;
+  scene.add(grid);
+}
+makeGrid();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", makeGrid);
+new MutationObserver(makeGrid).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+const root = new THREE.Group();
+root.rotation.x = -Math.PI / 2; // модель в Z-вверх
+scene.add(root);
+
+camera.position.set(560, 420, 700);
+controls.target.set(40, 230, 0);
+
+function resize() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(r.height, 1);
+  const narrow = r.width < 560;
+  camera.fov = narrow ? 44 : 36;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas.parentElement);
+resize();
+
+// ---------- load model
+const groups = {};
+const meshes = [];
+let C, springMesh, springA, springB;
+
+async function load() {
+  const meta = await (await fetch("arm.json")).json();
+  const b64 = (await (await fetch("arm.b64.txt")).text()).trim();
+  const gz = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const ds = new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip")));
+  const buf = await ds.arrayBuffer();
+  C = meta.consts;
+
+  for (const k of Object.keys(meta.links).map(Number).sort((a, b) => a - b)) {
+    const L = meta.links[k];
+    const g = new THREE.Group();
+    g.position.set(...L.origin);
+    groups[k] = g;
+    (L.parent === null ? root : groups[L.parent]).add(g);
+  }
+  const matCache = {};
+  for (const p of meta.parts) {
+    const pos = new Float32Array(buf, p.off, p.nv * 3);
+    const ioff = p.off + p.nv * 12;
+    const idx = p.idx32 ? new Uint32Array(buf, ioff, p.nf * 3) : new Uint16Array(buf, ioff, p.nf * 3);
+    let geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos.slice(), 3));
+    geo.setIndex(new THREE.BufferAttribute(idx.slice(), 1));
+    geo = toCreasedNormals(geo, THREE.MathUtils.degToRad(32));
+    const mat = matCache[p.mat] ||= new THREE.MeshPhysicalMaterial(MATS[p.mat] || MATS.dark);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = p.mat !== "glow";
+    mesh.receiveShadow = true;
+    mesh.userData = p;
+    groups[p.link].add(mesh);
+    meshes.push(mesh);
+  }
+  // пружина-противовес
+  springA = new THREE.Vector3(-70, 0, 95.6);           // в звене 1
+  springB = new THREE.Vector3(-22.5, 0, 36);            // в звене 2
+  springMesh = new THREE.Mesh(springGeo(90), new THREE.MeshPhysicalMaterial(MATS.metal));
+  springMesh.castShadow = true;
+  root.add(springMesh);
+
+  document.getElementById("loading").hidden = true;
+  applyPose();
+}
+
+let springLen = 90;
+function springGeo(len) {
+  const turns = 14, R = 7, n = turns * 20, pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, a = t * turns * Math.PI * 2;
+    const hook = Math.min(t, 1 - t) < 0.04;
+    pts.push(new THREE.Vector3(hook ? 0 : Math.cos(a) * R, t * len, hook ? 0 : Math.sin(a) * R));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), n, 1.2, 6, false);
+}
+const D = THREE.MathUtils.degToRad;
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+function applyPose() {
+  if (!C) return;
+  groups[1].rotation.set(0, 0, D(state.base));
+  groups[2].rotation.set(0, D(state.shoulder), 0);
+  groups[3].rotation.set(0, D(state.elbow), 0);
+  groups[4].rotation.set(0, D(state.wrist), 0);
+  groups[5].rotation.set(0, 0, D(state.roll));
+  const th = D(7.5 + (85 - 7.5) * state.grip / 100);
+  groups[6].rotation.set(0, -th, 0);
+  groups[7].rotation.set(0, th, 0);
+  groups[8].rotation.set(0, -th, 0);
+  groups[9].rotation.set(0, th, 0);
+  groups[10].position.set(-C.G_R - C.LINK * Math.sin(th), 0, C.G_Z + C.LINK * Math.cos(th));
+  groups[11].position.set(C.G_R + C.LINK * Math.sin(th), 0, C.G_Z + C.LINK * Math.cos(th));
+  root.updateMatrixWorld(true);
+  tmpA.copy(springA); groups[1].localToWorld(tmpA); root.worldToLocal(tmpA);
+  tmpB.copy(springB); groups[2].localToWorld(tmpB); root.worldToLocal(tmpB);
+  const dir = tmpB.clone().sub(tmpA);
+  springMesh.position.copy(tmpA);
+  springMesh.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+  const len = dir.length();
+  if (Math.abs(len - springLen) > 0.5) {
+    springMesh.geometry.dispose();
+    springMesh.geometry = springGeo(len);
+    springLen = len;
+  }
+}
+
+// ---------- выбор детали
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downAt = null, selected = null;
+const info = { k: document.getElementById("info-k"), n: document.getElementById("info-n"), d: document.getElementById("info-d") };
+canvas.addEventListener("pointerdown", e => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", e => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(meshes.filter(m => m.visible), false)[0];
+  select(hit ? hit.object : null);
+});
+function select(mesh) {
+  if (selected) { selected.material = selected.userData._mat; }
+  selected = mesh;
+  if (!mesh) return;
+  document.getElementById("info").classList.remove("idle");
+  const p = mesh.userData;
+  p._mat = mesh.material;
+  const m = mesh.material.clone();
+  m.emissive = new THREE.Color(0x38c8ff);
+  m.emissiveIntensity = 0.55;
+  mesh.material = m;
+  const [title, desc] = NAMES[p.name] || [p.name, ""];
+  info.n.textContent = title;
+  if (p.printable) {
+    const g = Math.round(p.vol * 1.27 * 0.55);
+    info.k.textContent = `${p.name}.stl · печать ${p.size[0]}×${p.size[1]}×${p.size[2]} мм · ~${g} г`;
+  } else {
+    info.k.textContent = "покупается, не печатается";
+  }
+  info.d.textContent = desc;
+}
+
+// ---------- кнопки
+const demoBtn = document.getElementById("demo");
+const printBtn = document.getElementById("printOnly");
+let demoT0 = null;
+const POSES = [
+  { base: 25,  shoulder: 15, elbow: 70,  wrist: 65,  roll: 0,   grip: 55 },
+  { base: -40, shoulder: 35, elbow: 75,  wrist: 65,  roll: 0,   grip: 95 },
+  { base: -40, shoulder: 48, elbow: 72,  wrist: 55,  roll: 0,   grip: 95 },
+  { base: -40, shoulder: 48, elbow: 72,  wrist: 55,  roll: 0,   grip: 22 },
+  { base: -40, shoulder: 5,  elbow: 60,  wrist: 70,  roll: 0,   grip: 22 },
+  { base: 70,  shoulder: 10, elbow: 40,  wrist: 40,  roll: 90,  grip: 22 },
+  { base: 70,  shoulder: 40, elbow: 65,  wrist: 65,  roll: 0,   grip: 22 },
+  { base: 70,  shoulder: 40, elbow: 65,  wrist: 65,  roll: 0,   grip: 95 },
+  { base: 25,  shoulder: 15, elbow: 70,  wrist: 65,  roll: 0,   grip: 55 },
+];
+const SEG_T = 1.6;
+const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function stopDemo() { demoT0 = null; demoBtn.setAttribute("aria-pressed", "false"); }
+demoBtn.addEventListener("click", () => {
+  if (demoT0 !== null) return stopDemo();
+  demoT0 = performance.now();
+  demoBtn.setAttribute("aria-pressed", "true");
+});
+document.getElementById("reset").addEventListener("click", () => {
+  stopDemo();
+  Object.assign(state, POSES[0]);
+  syncUI();
+});
+printBtn.addEventListener("click", () => {
+  const on = printBtn.getAttribute("aria-pressed") !== "true";
+  printBtn.setAttribute("aria-pressed", String(on));
+  for (const m of meshes) m.visible = !on || m.userData.printable;
+  springMesh.visible = !on;
+});
+
+// ---------- loop
+function frame(now) {
+  if (demoT0 !== null) {
+    const t = (now - demoT0) / 1000 / SEG_T;
+    const i = Math.floor(t) % (POSES.length - 1);
+    const f = ease(t - Math.floor(t));
+    const a = POSES[i], b = POSES[i + 1];
+    for (const k in a) state[k] = a[k] + (b[k] - a[k]) * f;
+    syncUI();
+  }
+  applyPose();
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+load().catch(err => {
+  document.getElementById("loading").textContent = "Не удалось загрузить модель: " + err.message;
+});
+requestAnimationFrame(frame);
+</script>
